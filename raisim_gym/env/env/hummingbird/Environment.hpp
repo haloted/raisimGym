@@ -34,6 +34,7 @@
 #include <stdlib.h>
 #include <cstdint>
 #include <set>
+
 #include <raisim/OgreVis.hpp>
 #include "RaisimGymEnv.hpp"
 #include "visSetupCallback.hpp"
@@ -57,7 +58,7 @@ class ENVIRONMENT : public RaisimGymEnv {
       gen_(rd_()) {
 
     /// add objects
-    hummingbird_ = world_->addBox(0.35, 0.35, 0.08, 0.6);
+    hummingbird_ = world_->addBox(0.35, 0.35, 0.08, mass_);
     auto ground = world_->addGround(-5);
 
     /// get robot data
@@ -152,6 +153,16 @@ class ENVIRONMENT : public RaisimGymEnv {
 
   ~ENVIRONMENT() final = default;
 
+  /// Check if it's a rotational matrix
+  /// This part is my modification
+  ////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+
+
+
+
+///////////////////////////////////////////////
   void init() final { }
 
   void reset() final {
@@ -189,6 +200,44 @@ class ENVIRONMENT : public RaisimGymEnv {
   }
 
   float step(const Eigen::Ref<EigenVec>& action) final {
+
+    /// This part should include a Control Input from PD stabilisation
+    
+    ///obScaled gives 18 dimensions first 9 is the rotational matrix, 
+    ///second triplet is position, third triplet is linear velocity 
+    ///fourth triplet is the angular velocity 
+    /// Calculate the q0 to obtain simple rotational angle
+    /// Get the rotational matrix
+    hummingbird_->getRotationMatrix(rot_);
+
+    float sy = std::sqrt(rot_.at<double>(0,0) * rot_.at<double>(0,0) +  rot_.at<double>(1,0) * rot_.at<double>(1,0) );
+ 
+    bool singular = sy < 1e-6; // If singular
+ 
+    /// Get the orientation of from rotational matrix
+    /// Define a Vector Orientation to store the phi theta psi
+    Eigen::Vector3d Orientation
+    if (!singular)
+    {
+        Orientation(0) = std::atan2(rot_.at<double>(2,1) , rot_.at<double>(2,2));
+        Orientation(1) = std::atan2(-rot_.at<double>(2,0), sy);
+        Orientation(2) = std::atan2(rot_.at<double>(1,0), rot_.at<double>(0,0));
+    }
+    else
+    {
+        Orientation(0) = std::atan2(-rot_.at<double>(1,2), rot_.at<double>(1,1));
+        Orientation(1) = std::atan2(-rot_.at<double>(2,0), sy);
+        Orientation(2) = 0;
+    }    
+
+    /// Define a Vector 
+    
+    double rot_angle_ = 2.0 * std::acos(0.5 * std::sqrt(1+rot_[0]+rot_[4]+rot_[8]));  //Angle of rotation
+    
+    hummingbird_->getAngularVelocity(angVel_W_);
+
+    angVel_B_ = rot_.transpose()*angVel_W_;
+
     /// action scaling
     thrusts_ = action.cast<double>();
     thrusts_ = thrusts_.cwiseProduct(actionStd_);
@@ -199,6 +248,33 @@ class ENVIRONMENT : public RaisimGymEnv {
     Eigen::Vector3d force_B;
     force_B << 0.0, 0.0, genForce(3);
 
+    double kp_rot = -0.2, kd_rot = -0.06;
+    Eigen::Vector3d fbtorque_B 
+
+    if (angle > 1e-6){
+        fbtorque_B = kp_rot * rot_angle * (rot_.transpose() * Orientation) 
+            / sin(rot_angle) + kd_rot * angVel_B_;
+    }
+    else
+    {
+      fbtorque_B = kd_rot * angVel_B_;
+      fbtorque_B(2) = fbtorque_B(2) * 0.15; 
+    }
+
+    torque_B += fbtorque_B;  /// sum of torque inputs
+
+    force_B(2) += mass_ * 9.81; /// Sum of thrust inputs
+
+    // clip inputs
+    genForce << torque_B, force_B(2);
+    thrust_ = transsThrust2GenForce_.inverse() * genForce;
+    thrust_ = thrust_.array().cwiseMax(1e-8);   // clip for min value
+    genForce = transsThrust2GenForce_ * thrust_;
+    torque_B = genForce.segment(0,3);
+    force_B << 0.0, 0.0, genForce(3);
+
+
+////////////////////////
     raisim::Vec<3> torque_W, force_W;
     torque_W.e() = rot_.e() * torque_B;
     force_W.e() = rot_.e() * force_B;
@@ -328,6 +404,7 @@ class ENVIRONMENT : public RaisimGymEnv {
 
   /// quadrotor model parameters
   double length_ = 0.17, dragCoeff_= 0.016;
+  double mass_ = 0.6;
 
   std::normal_distribution<double> normDist_;
   std::random_device rd_;
