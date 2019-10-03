@@ -153,16 +153,6 @@ class ENVIRONMENT : public RaisimGymEnv {
 
   ~ENVIRONMENT() final = default;
 
-  /// Check if it's a rotational matrix
-  /// This part is my modification
-  ////////////////////////////////////////////////////////////////////////////////////////////////
-
-
-
-
-
-
-///////////////////////////////////////////////
   void init() final { }
 
   void reset() final {
@@ -272,7 +262,6 @@ class ENVIRONMENT : public RaisimGymEnv {
     genForce = transsThrust2GenForce_ * thrust_;
     torque_B = genForce.segment(0,3);
     force_B << 0.0, 0.0, genForce(3);
-
 
 ////////////////////////
     raisim::Vec<3> torque_W, force_W;
