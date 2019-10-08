@@ -58,7 +58,7 @@ class ENVIRONMENT : public RaisimGymEnv {
       gen_(rd_()) {
 
     /// add objects
-    hummingbird_ = world_->addBox(0.35, 0.35, 0.08, mass_);
+    hummingbird_ = world_->addBox(0.35, 0.35, 0.08, 0.6);
     auto ground = world_->addGround(-5);
 
     /// get robot data
@@ -200,29 +200,17 @@ class ENVIRONMENT : public RaisimGymEnv {
     /// Get the rotational matrix
     hummingbird_->getRotationMatrix(rot_);
 
-    float sy = std::sqrt(rot_.at<double>(0,0) * rot_.at<double>(0,0) +  rot_.at<double>(1,0) * rot_.at<double>(1,0) );
- 
-    bool singular = sy < 1e-6; // If singular
- 
-    /// Get the orientation of from rotational matrix
-    /// Define a Vector Orientation to store the phi theta psi
-    Eigen::Vector3d Orientation
-    if (!singular)
-    {
-        Orientation(0) = std::atan2(rot_.at<double>(2,1) , rot_.at<double>(2,2));
-        Orientation(1) = std::atan2(-rot_.at<double>(2,0), sy);
-        Orientation(2) = std::atan2(rot_.at<double>(1,0), rot_.at<double>(0,0));
-    }
-    else
-    {
-        Orientation(0) = std::atan2(-rot_.at<double>(1,2), rot_.at<double>(1,1));
-        Orientation(1) = std::atan2(-rot_.at<double>(2,0), sy);
-        Orientation(2) = 0;
-    }    
+    /// Convert rot_ which is a 3x3 matrix into a quaternion 
 
+    Eigen::Quaternionf quatFromRot(rot_)
+    Eigen::Vector3d Orientation
+    /// quatFromRot basically houses the quaternion in w + xi +yj + zk form
+     
+    Orientation = quatFromRot.toRotationMatrix().eulerAngles(0, 1, 2);
+    
     /// Define a Vector 
     
-    double rot_angle_ = 2.0 * std::acos(0.5 * std::sqrt(1+rot_[0]+rot_[4]+rot_[8]));  //Angle of rotation
+    double rot_angle = 2.0 * std::acos(quatFromRot.w());  //Angle of rotation obtain q0 is quatFromRot.w()
     
     hummingbird_->getAngularVelocity(angVel_W_);
 
@@ -241,7 +229,7 @@ class ENVIRONMENT : public RaisimGymEnv {
     double kp_rot = -0.2, kd_rot = -0.06;
     Eigen::Vector3d fbtorque_B 
 
-    if (angle > 1e-6){
+    if (rot_angle > 1e-6){
         fbtorque_B = kp_rot * rot_angle * (rot_.transpose() * Orientation) 
             / sin(rot_angle) + kd_rot * angVel_B_;
     }
@@ -252,8 +240,6 @@ class ENVIRONMENT : public RaisimGymEnv {
     }
 
     torque_B += fbtorque_B;  /// sum of torque inputs
-
-    force_B(2) += mass_ * 9.81; /// Sum of thrust inputs
 
     // clip inputs
     genForce << torque_B, force_B(2);
@@ -393,7 +379,6 @@ class ENVIRONMENT : public RaisimGymEnv {
 
   /// quadrotor model parameters
   double length_ = 0.17, dragCoeff_= 0.016;
-  double mass_ = 0.6;
 
   std::normal_distribution<double> normDist_;
   std::random_device rd_;
